@@ -1,0 +1,10 @@
+{
+  "description": "Track and log workouts effortlessly with a user-friendly interface, designed for fitness enthusiasts to manage routines and monitor progress effectively.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
