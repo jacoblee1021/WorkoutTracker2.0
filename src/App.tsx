@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import * as api from './lib/api'
 import type { ExerciseRow as ExerciseDef, OpenSession, ProgramDetail, ProgramSummary } from './lib/api'
+import type { MuscleFocusEntry, StrengthTrend, WeeklyStats } from './lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,10 +41,16 @@ function fmtWeight(w: number) {
   return w % 1 === 0 ? String(w) : w.toFixed(1)
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function fmtDuration(totalMinutes: number) {
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  return h === 0 ? `${m}m` : `${h}h ${m}m`
+}
+
+function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="min-h-screen bg-ground text-ink font-body flex justify-center">
-      <div className="w-full max-w-[480px] min-h-screen flex flex-col">
+      <div className={`w-full min-h-screen flex flex-col ${wide ? 'max-w-[480px] md:max-w-[760px]' : 'max-w-[480px]'}`}>
         {children}
       </div>
     </div>
@@ -91,11 +98,10 @@ function Tag({ label }: { label: string }) {
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 function HomeScreen({
-  continueCards, sessionCounts, starting,
+  continueCards, starting,
   onResumeSession, onDiscardSession, onContinueProgram, onAdhoc, onBrowsePrograms,
 }: {
   continueCards: ContinueCard[] | 'loading'
-  sessionCounts: { thisWeek: number; thisMonth: number } | null
   starting: boolean
   onResumeSession: (open: OpenSession) => void
   onDiscardSession: () => void
@@ -103,8 +109,15 @@ function HomeScreen({
   onAdhoc: () => void
   onBrowsePrograms: () => void
 }) {
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStats | null>(null)
+  const [insightTab, setInsightTab] = useState<'trend' | 'focus'>('trend')
+
+  useEffect(() => {
+    api.getWeeklyStats().then(setWeeklyStats).catch(() => setWeeklyStats(null))
+  }, [])
+
   return (
-    <Shell>
+    <Shell wide>
       <header className="px-6 pt-12 pb-8 flex justify-between items-start">
         <div>
           <p className="text-xs tracking-[0.2em] uppercase text-muted font-display">
@@ -112,12 +125,15 @@ function HomeScreen({
           </p>
           <h1 className="text-4xl font-display font-700 text-ink mt-1 tracking-tight">LIFT</h1>
         </div>
-        <div className="w-9 h-9 rounded-full bg-surface border border-border flex items-center justify-center mt-1">
-          <span className="text-xs font-display text-muted tracking-wide">JS</span>
+        <div className="w-9 h-9 rounded-full bg-surface border border-border flex items-center justify-center mt-1 text-muted">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
         </div>
       </header>
 
-      <div className="flex-1 space-y-6">
+      <div className="flex-1 space-y-8">
         <section>
           <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display px-6">Continue</p>
           {continueCards === 'loading' ? (
@@ -215,16 +231,296 @@ function HomeScreen({
             <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
           </button>
         </section>
+
+        <section className="px-6">
+          <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">This Week</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+              <p className="text-xl font-display font-700 text-lime tabular-nums">
+                {weeklyStats ? weeklyStats.sessions : '–'}
+              </p>
+              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Sessions</p>
+            </div>
+            <div
+              className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center"
+              title="An exercise's total volume (reps × weight) beat its previous best"
+            >
+              <p className="text-xl font-display font-700 text-lime tabular-nums">
+                {weeklyStats ? weeklyStats.prsSet : '–'}
+              </p>
+              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">PRs Set</p>
+            </div>
+            <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+              <p className="text-xl font-display font-700 text-lime tabular-nums">
+                {weeklyStats ? fmtDuration(weeklyStats.totalMinutes) : '–'}
+              </p>
+              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Total Time</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="px-6">
+          <div className="flex gap-2 mb-3.5 md:hidden">
+            <button
+              onClick={() => setInsightTab('trend')}
+              className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
+                insightTab === 'trend' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
+              }`}
+            >
+              Strength Trend
+            </button>
+            <button
+              onClick={() => setInsightTab('focus')}
+              className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
+                insightTab === 'focus' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
+              }`}
+            >
+              Muscle Focus
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[1.3fr_1fr] md:gap-4">
+            <div className={insightTab === 'trend' ? 'block' : 'hidden md:block'}>
+              <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Strength Trend</p>
+              <StrengthTrendCard />
+            </div>
+            <div className={insightTab === 'focus' ? 'block' : 'hidden md:block'}>
+              <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Muscle Focus</p>
+              <MuscleFocusCard />
+            </div>
+          </div>
+        </section>
       </div>
 
-      <footer className="px-6 pb-10 mt-8">
-        <p className="text-xs text-muted text-center font-display tracking-wide">
-          {sessionCounts
-            ? `${sessionCounts.thisWeek} sessions this week · ${sessionCounts.thisMonth} this month`
-            : ' '}
-        </p>
-      </footer>
+      <div className="pb-10" />
     </Shell>
+  )
+}
+
+// ─── This Week insight cards ────────────────────────────────────────────────
+
+function MuscleFocusCard() {
+  const [entries, setEntries] = useState<MuscleFocusEntry[] | 'loading'>('loading')
+
+  useEffect(() => {
+    api.getMuscleFocus().then(setEntries).catch(() => setEntries([]))
+  }, [])
+
+  if (entries === 'loading') {
+    return (
+      <div className="bg-surface border border-border rounded-sm p-5">
+        <p className="text-xs text-muted">Loading...</p>
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded-sm p-5">
+        <p className="text-xs text-muted">Log a few sessions to see your muscle group focus here.</p>
+      </div>
+    )
+  }
+
+  const maxPct = Math.max(...entries.map(e => e.pct))
+  const flagged = entries.filter(e => e.underFocused)
+
+  return (
+    <div className="bg-surface border border-border rounded-sm p-5">
+      <div className="flex justify-between items-baseline mb-4">
+        <span className="text-sm font-display font-600 text-ink">% of sets logged</span>
+        <span className="text-xs text-muted">Last 30 days</span>
+      </div>
+      <div>
+        {entries.map(e => (
+          <div key={e.muscleGroup} className="grid grid-cols-[76px_1fr_40px] items-center gap-2.5 py-1.5">
+            <span className="text-xs font-display text-ink flex items-center gap-1.5 truncate">
+              {e.muscleGroup}
+              {e.underFocused && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Under-focused" />
+              )}
+            </span>
+            <span className="h-2 bg-surface2 rounded-sm overflow-hidden block">
+              <span
+                className="block h-full bg-lime rounded-sm"
+                style={{ width: `${(e.pct / maxPct) * 100}%` }}
+              />
+            </span>
+            <span className="text-xs text-muted font-display tabular-nums text-right">{e.pct}%</span>
+          </div>
+        ))}
+      </div>
+      {flagged.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border flex items-start gap-1.5 text-xs text-muted">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" />
+          <span>Under-focused relative to the rest — consider adding a {flagged[0].muscleGroup} day</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const W = 320
+  const H = 120
+  const PAD = 10
+  const n = trend.weeks.length
+
+  const points = trend.weeks
+    .map((w, i) => ({ i, weekStart: w.weekStart, weight: w.maxWeight }))
+    .filter((p): p is { i: number; weekStart: string; weight: number } => p.weight !== null)
+
+  if (points.length === 0) {
+    return <p className="text-xs text-muted">No logged sets for this muscle group yet.</p>
+  }
+
+  const minW = Math.min(...points.map(p => p.weight))
+  const maxW = Math.max(...points.map(p => p.weight))
+  const range = maxW - minW || 1
+
+  const xAt = (i: number) => PAD + (i / Math.max(1, n - 1)) * (W - PAD * 2)
+  const yAt = (w: number) => PAD + (1 - (w - minW) / range) * (H - PAD * 2)
+
+  const linePts = points.map(p => `${xAt(p.i)},${yAt(p.weight)}`)
+  const areaD = `M${xAt(points[0].i)},${H} L${linePts.join(' L')} L${xAt(points[points.length - 1].i)},${H} Z`
+  const deltaLabel = trend.deltaPct === null ? null : `${trend.deltaPct >= 0 ? '+' : ''}${trend.deltaPct}%`
+  const hitWidth = W / n
+  const hovered = hoverIdx !== null ? points.find(p => p.i === hoverIdx) ?? null : null
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-2.5 mb-1">
+        <span className="text-sm font-display font-600 text-ink">{trend.exerciseName}</span>
+        {deltaLabel && <span className="text-xs font-display font-600 text-lime tabular-nums">{deltaLabel}</span>}
+      </div>
+      <p className="text-xs text-muted mb-3.5">Top set weight · last {n} weeks</p>
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full block overflow-visible" style={{ height: 120 }}>
+          <line x1="0" y1={H * 0.15} x2={W} y2={H * 0.15} className="stroke-border" strokeWidth="1" />
+          <line x1="0" y1={H * 0.5} x2={W} y2={H * 0.5} className="stroke-border" strokeWidth="1" />
+          <line x1="0" y1={H * 0.85} x2={W} y2={H * 0.85} className="stroke-border" strokeWidth="1" />
+          <path d={areaD} className="fill-lime/10" />
+          <polyline
+            points={linePts.join(' ')}
+            fill="none"
+            className="stroke-lime"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {points.map((p, idx) => (
+            <circle
+              key={p.i}
+              cx={xAt(p.i)}
+              cy={yAt(p.weight)}
+              r={idx === points.length - 1 ? 4 : 2.5}
+              className={idx === points.length - 1 ? 'fill-lime stroke-lime' : 'fill-ground stroke-lime'}
+              strokeWidth="2"
+            />
+          ))}
+          {hovered && (
+            <line
+              x1={xAt(hovered.i)}
+              y1="0"
+              x2={xAt(hovered.i)}
+              y2={H}
+              className="stroke-muted"
+              strokeWidth="1"
+              strokeDasharray="2 3"
+            />
+          )}
+          {points.map(p => (
+            <rect
+              key={`hit-${p.i}`}
+              x={xAt(p.i) - hitWidth / 2}
+              y="0"
+              width={hitWidth}
+              height={H}
+              fill="transparent"
+              onMouseEnter={() => setHoverIdx(p.i)}
+              onMouseLeave={() => setHoverIdx(null)}
+            />
+          ))}
+        </svg>
+        {hovered && (
+          <div
+            className="absolute -top-1.5 -translate-x-1/2 -translate-y-full bg-ground border border-border rounded-sm px-2.5 py-1.5 pointer-events-none whitespace-nowrap"
+            style={{ left: `${(xAt(hovered.i) / W) * 100}%` }}
+          >
+            <p className="text-xs font-display font-600 text-lime tabular-nums">{fmtWeight(hovered.weight)} lbs</p>
+            <p className="text-[10px] text-muted font-display">
+              {new Date(hovered.weekStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StrengthTrendCard() {
+  const [groups, setGroups] = useState<string[] | 'loading'>('loading')
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
+  const [trend, setTrend] = useState<StrengthTrend | null | 'loading'>('loading')
+
+  useEffect(() => {
+    api
+      .getTrainedMuscleGroups()
+      .then(gs => {
+        setGroups(gs)
+        if (gs.length > 0) setSelectedGroup(gs[0])
+      })
+      .catch(() => setGroups([]))
+  }, [])
+
+  useEffect(() => {
+    if (!selectedGroup) return
+    setTrend('loading')
+    api
+      .getStrengthTrend(selectedGroup)
+      .then(setTrend)
+      .catch(() => setTrend(null))
+  }, [selectedGroup])
+
+  if (groups === 'loading') {
+    return (
+      <div className="bg-surface border border-border rounded-sm p-5">
+        <p className="text-xs text-muted">Loading...</p>
+      </div>
+    )
+  }
+
+  if (groups.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded-sm p-5">
+        <p className="text-xs text-muted">Log a few sessions to see your strength trend here.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded-sm p-5">
+      <select
+        value={selectedGroup ?? ''}
+        onChange={e => setSelectedGroup(e.target.value)}
+        className="bg-surface2 border border-border rounded-sm px-3 py-2 text-xs font-display uppercase tracking-wider text-ink mb-4 focus:outline-none focus:border-lime/40"
+      >
+        {groups.map(g => (
+          <option key={g} value={g}>
+            {g}
+          </option>
+        ))}
+      </select>
+
+      {trend === 'loading' ? (
+        <p className="text-xs text-muted">Loading...</p>
+      ) : !trend ? (
+        <p className="text-xs text-muted">No logged sets for this muscle group yet.</p>
+      ) : (
+        <StrengthTrendChart trend={trend} />
+      )}
+    </div>
   )
 }
 
@@ -1290,7 +1586,6 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0)
 
   const [continueCards, setContinueCards] = useState<ContinueCard[] | 'loading'>('loading')
-  const [sessionCounts, setSessionCounts] = useState<{ thisWeek: number; thisMonth: number } | null>(null)
   const [starting, setStarting] = useState(false)
   const [finishing, setFinishing] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -1355,7 +1650,6 @@ export default function App() {
 
   useEffect(() => {
     api.getMuscleGroups().then(setMuscleGroups).catch(showError)
-    api.getSessionCounts().then(setSessionCounts).catch(showError)
     refreshContinueCards()
   }, [refreshContinueCards])
 
@@ -1560,7 +1854,6 @@ export default function App() {
       setSessionStartTime(null)
       setElapsed(0)
       setActiveProgramId(null)
-      api.getSessionCounts().then(setSessionCounts).catch(showError)
       refreshContinueCards()
     } catch (e) {
       showError(e)
@@ -1627,7 +1920,6 @@ export default function App() {
         {errorBanner}
         <HomeScreen
           continueCards={continueCards}
-          sessionCounts={sessionCounts}
           starting={starting}
           onResumeSession={resumeOpenSession}
           onDiscardSession={discardOpenSessionCard}
@@ -1771,7 +2063,6 @@ export default function App() {
             setSessionStartTime(null)
             setElapsed(0)
             setActiveProgramId(null)
-            api.getSessionCounts().then(setSessionCounts).catch(showError)
             refreshContinueCards()
           }}
         />
