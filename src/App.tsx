@@ -1290,7 +1290,16 @@ export default function App() {
   const [libLoading, setLibLoading] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
-  const showError = useCallback((e: unknown) => setError(e instanceof Error ? e.message : String(e)), [])
+  const showError = useCallback((e: unknown) => {
+    if (e instanceof Error) {
+      setError(e.message)
+    } else if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
+      // Supabase/PostgREST errors are plain objects ({ code, message, details, hint }), not Error instances.
+      setError((e as { message: string }).message)
+    } else {
+      setError(String(e))
+    }
+  }, [])
 
   const refreshHomeCard = useCallback(async () => {
     setHomeCard({ kind: 'loading' })
