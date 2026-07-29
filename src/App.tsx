@@ -1399,11 +1399,6 @@ export default function App() {
     async (programId: string, dayNumber: number) => {
       setStarting(true)
       try {
-        const open = await api.getOpenSession()
-        if (open) {
-          resumeOpenSession(open)
-          return
-        }
         const day = await api.getProgramDay(programId, dayNumber)
         if (!day) throw new Error('Could not find that day.')
         const newSessionId = await api.createSession({ programId, programDayNumber: dayNumber })
@@ -1431,17 +1426,12 @@ export default function App() {
         setStarting(false)
       }
     },
-    [resumeOpenSession, showError]
+    [showError]
   )
 
   const startAdhoc = useCallback(async () => {
     setStarting(true)
     try {
-      const open = await api.getOpenSession()
-      if (open) {
-        resumeOpenSession(open)
-        return
-      }
       const newSessionId = await api.createSession({})
       setSessionId(newSessionId)
       setSessionType('adhoc')
@@ -1455,7 +1445,7 @@ export default function App() {
     } finally {
       setStarting(false)
     }
-  }, [resumeOpenSession, showError])
+  }, [showError])
 
   const beginWorkout = (idx: number) => {
     const ex = exercises[idx]
