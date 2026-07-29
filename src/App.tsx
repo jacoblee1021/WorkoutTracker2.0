@@ -18,8 +18,7 @@ interface ExerciseEntry {
   sets: SetLog[]
 }
 
-type HomeCard =
-  | { kind: 'loading' }
+type ContinueCard =
   | { kind: 'session'; open: OpenSession }
   | {
       kind: 'program'
@@ -30,7 +29,6 @@ type HomeCard =
       completedDayCount: number
       dayCount: number
     }
-  | { kind: 'none' }
 
 function fmtTime(s: number) {
   const m = Math.floor(s / 60)
@@ -93,14 +91,15 @@ function Tag({ label }: { label: string }) {
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 function HomeScreen({
-  homeCard, sessionCounts, starting,
-  onResumeSession, onContinueProgram, onAdhoc, onBrowsePrograms,
+  continueCards, sessionCounts, starting,
+  onResumeSession, onDiscardSession, onContinueProgram, onAdhoc, onBrowsePrograms,
 }: {
-  homeCard: HomeCard
+  continueCards: ContinueCard[] | 'loading'
   sessionCounts: { thisWeek: number; thisMonth: number } | null
   starting: boolean
-  onResumeSession: () => void
-  onContinueProgram: () => void
+  onResumeSession: (open: OpenSession) => void
+  onDiscardSession: (sessionId: string) => void
+  onContinueProgram: (programId: string, dayNumber: number) => void
   onAdhoc: () => void
   onBrowsePrograms: () => void
 }) {
@@ -118,58 +117,18 @@ function HomeScreen({
         </div>
       </header>
 
-      <div className="px-6 flex-1 space-y-6">
+      <div className="flex-1 space-y-6">
         <section>
-          <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">
-            {homeCard.kind === 'session' ? 'Continue Session' : 'Continue'}
-          </p>
-          {homeCard.kind === 'loading' ? (
-            <div className="w-full bg-surface border border-border rounded-sm p-5">
+          <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display px-6">Continue</p>
+          {continueCards === 'loading' ? (
+            <div className="mx-6 bg-surface border border-border rounded-sm p-5">
               <p className="text-xs text-muted">Loading your progress...</p>
             </div>
-          ) : homeCard.kind === 'session' ? (
-            <button
-              onClick={onResumeSession}
-              disabled={starting}
-              className="w-full bg-surface border border-lime/25 rounded-sm p-5 text-left hover:border-lime/40 transition-colors group disabled:opacity-50"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-lg font-display font-600 text-ink">{homeCard.open.dayLabel}</h2>
-                  <p className="text-xs text-muted mt-1">
-                    {homeCard.open.exercises.length} exercises · session in progress
-                  </p>
-                </div>
-                <span className="text-lime text-xl leading-none mt-0.5 inline-block group-hover:translate-x-0.5 transition-transform">
-                  {starting ? '···' : '→'}
-                </span>
-              </div>
-            </button>
-          ) : homeCard.kind === 'program' ? (
-            <button
-              onClick={onContinueProgram}
-              disabled={starting}
-              className="w-full bg-surface border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group disabled:opacity-50"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-[10px] text-muted font-display uppercase tracking-[0.15em]">
-                    {homeCard.title}
-                  </p>
-                  <h2 className="text-lg font-display font-600 text-ink mt-1">{homeCard.dayLabel}</h2>
-                  <p className="text-xs text-muted mt-1">
-                    {homeCard.completedDayCount}/{homeCard.dayCount} days done
-                  </p>
-                </div>
-                <span className="text-lime text-xl leading-none mt-0.5 inline-block group-hover:translate-x-0.5 transition-transform">
-                  {starting ? '···' : '→'}
-                </span>
-              </div>
-            </button>
-          ) : (
+          ) : continueCards.length === 0 ? (
             <button
               onClick={onBrowsePrograms}
-              className="w-full bg-surface border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center"
+              className="mx-6 bg-surface border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center"
+              style={{ width: 'calc(100% - 3rem)' }}
             >
               <div>
                 <h2 className="text-base font-display font-600 text-ink">Start a Program</h2>
@@ -177,24 +136,84 @@ function HomeScreen({
               </div>
               <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
             </button>
-          )}
-          {homeCard.kind !== 'loading' && (
-            <button
-              onClick={onBrowsePrograms}
-              className="mt-3 text-xs text-muted hover:text-ink transition-colors font-display uppercase tracking-wider"
-            >
-              Browse all programs →
-            </button>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto scrollbar-hide px-6 pb-1">
+              {continueCards.map(card =>
+                card.kind === 'session' ? (
+                  <div
+                    key={`session-${card.open.sessionId}`}
+                    className="shrink-0 w-56 bg-surface border border-lime/25 rounded-sm p-4 flex flex-col relative"
+                  >
+                    <button
+                      onClick={() => onDiscardSession(card.open.sessionId)}
+                      title="Discard this session"
+                      className="absolute top-2.5 right-2.5 text-muted hover:text-ink transition-colors text-xs w-5 h-5 flex items-center justify-center"
+                    >
+                      ✕
+                    </button>
+                    <button
+                      onClick={() => onResumeSession(card.open)}
+                      disabled={starting}
+                      className="text-left flex-1 disabled:opacity-50"
+                    >
+                      <p className="text-[10px] text-lime font-display uppercase tracking-[0.15em]">
+                        Continue Session
+                      </p>
+                      <p className="text-base font-display font-600 text-ink mt-1.5 leading-tight">
+                        {card.open.dayLabel}
+                      </p>
+                      <p className="text-xs text-muted mt-1 font-display">
+                        {card.open.exercises.length} exercises
+                      </p>
+                      <div className="mt-3 flex justify-end items-center">
+                        <span className="text-lime">{starting ? '···' : '→'}</span>
+                      </div>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    key={`program-${card.programId}`}
+                    onClick={() => onContinueProgram(card.programId, card.dayNumber)}
+                    disabled={starting}
+                    className="shrink-0 w-56 bg-surface border border-border rounded-sm p-4 text-left hover:border-lime/40 transition-colors group flex flex-col disabled:opacity-50"
+                  >
+                    <p className="text-[10px] text-muted font-display uppercase tracking-[0.15em] truncate">
+                      {card.title}
+                    </p>
+                    <p className="text-base font-display font-600 text-ink mt-1.5 leading-tight">
+                      {card.dayLabel}
+                    </p>
+                    <p className="text-xs text-muted mt-1 font-display">
+                      {card.completedDayCount}/{card.dayCount} days done
+                    </p>
+                    <div className="mt-3 flex justify-end items-center">
+                      <span className="text-lime group-hover:translate-x-0.5 transition-transform inline-block">
+                        {starting ? '···' : '→'}
+                      </span>
+                    </div>
+                  </button>
+                )
+              )}
+              <button
+                onClick={onBrowsePrograms}
+                className="shrink-0 w-40 border border-dashed border-border rounded-sm p-4 text-left hover:border-lime/30 transition-colors flex flex-col justify-center items-center gap-2"
+              >
+                <span className="text-lime text-xl">+</span>
+                <span className="text-xs text-muted font-display uppercase tracking-widest text-center leading-relaxed">
+                  Browse Programs
+                </span>
+              </button>
+            </div>
           )}
         </section>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 px-6">
           <div className="flex-1 h-px bg-border" />
           <span className="text-xs text-muted uppercase tracking-[0.2em] font-display">or</span>
           <div className="flex-1 h-px bg-border" />
         </div>
 
-        <section>
+        <section className="px-6">
           <button
             onClick={onAdhoc}
             disabled={starting}
@@ -899,16 +918,18 @@ interface OverviewProps {
   exercises: ExerciseEntry[]
   elapsed: number | null
   finishing: boolean
+  discarding: boolean
   onBack: () => void
   onBeginWorkout: (idx: number) => void
   onGoToExercise: (idx: number) => void
   onAddExercise: () => void
   onFinish: () => void
+  onDiscard: () => void
 }
 
 function OverviewScreen({
-  sessionType, programTitle, exercises, elapsed, finishing,
-  onBack, onBeginWorkout, onGoToExercise, onAddExercise, onFinish,
+  sessionType, programTitle, exercises, elapsed, finishing, discarding,
+  onBack, onBeginWorkout, onGoToExercise, onAddExercise, onFinish, onDiscard,
 }: OverviewProps) {
   const hasAnySet = exercises.some(e => e.sets.length > 0)
   const hasExercises = exercises.length > 0
@@ -977,6 +998,15 @@ function OverviewScreen({
           className="w-full py-4 bg-lime text-ground text-xs font-display font-700 uppercase tracking-[0.2em] rounded-sm disabled:opacity-30 hover:opacity-90 transition-opacity"
         >
           {hasAnySet ? 'Continue Workout' : 'Begin Workout'}
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm('Discard this session? Anything logged will be dropped.')) onDiscard()
+          }}
+          disabled={discarding}
+          className="w-full py-2 text-muted text-xs font-display uppercase tracking-[0.18em] hover:text-ink transition-colors disabled:opacity-50"
+        >
+          {discarding ? 'Discarding...' : 'Discard Session'}
         </button>
       </div>
     </Shell>
@@ -1270,10 +1300,11 @@ export default function App() {
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
 
-  const [homeCard, setHomeCard] = useState<HomeCard>({ kind: 'loading' })
+  const [continueCards, setContinueCards] = useState<ContinueCard[] | 'loading'>('loading')
   const [sessionCounts, setSessionCounts] = useState<{ thisWeek: number; thisMonth: number } | null>(null)
   const [starting, setStarting] = useState(false)
   const [finishing, setFinishing] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
   const [logging, setLogging] = useState(false)
 
   const [programs, setPrograms] = useState<ProgramSummary[]>([])
@@ -1301,43 +1332,39 @@ export default function App() {
     }
   }, [])
 
-  const refreshHomeCard = useCallback(async () => {
-    setHomeCard({ kind: 'loading' })
+  const refreshContinueCards = useCallback(async () => {
+    setContinueCards('loading')
     try {
-      const open = await api.getOpenSession()
-      if (open) {
-        setHomeCard({ kind: 'session', open })
-        return
-      }
-      const overview = await api.getProgramsOverview()
+      const [open, overview] = await Promise.all([api.getOpenSession(), api.getProgramsOverview()])
+      const cards: ContinueCard[] = []
+      if (open) cards.push({ kind: 'session', open })
+
       const inProgress = overview.filter(p => p.completedDayCount > 0 && p.completedDayCount < p.dayCount)
-      if (inProgress.length > 0) {
-        inProgress.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-        const top = inProgress[0]
-        const dayNumber = (top.completedDayCount % top.dayCount) + 1
-        setHomeCard({
+      inProgress.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+      for (const p of inProgress) {
+        const dayNumber = (p.completedDayCount % p.dayCount) + 1
+        cards.push({
           kind: 'program',
-          programId: top.id,
-          title: top.title,
+          programId: p.id,
+          title: p.title,
           dayLabel: `Day ${dayNumber}`,
           dayNumber,
-          completedDayCount: top.completedDayCount,
-          dayCount: top.dayCount,
+          completedDayCount: p.completedDayCount,
+          dayCount: p.dayCount,
         })
-        return
       }
-      setHomeCard({ kind: 'none' })
+      setContinueCards(cards)
     } catch (e) {
       showError(e)
-      setHomeCard({ kind: 'none' })
+      setContinueCards([])
     }
   }, [showError])
 
   useEffect(() => {
     api.getMuscleGroups().then(setMuscleGroups).catch(showError)
     api.getSessionCounts().then(setSessionCounts).catch(showError)
-    refreshHomeCard()
-  }, [refreshHomeCard])
+    refreshContinueCards()
+  }, [refreshContinueCards])
 
   useEffect(() => {
     if (screen !== 'library') return
@@ -1526,6 +1553,38 @@ export default function App() {
     }
   }
 
+  const discardActiveSession = async () => {
+    if (!sessionId) {
+      setScreen('home')
+      return
+    }
+    setDiscarding(true)
+    try {
+      await api.discardSession(sessionId)
+      setScreen('home')
+      setSessionId(null)
+      setExercises([])
+      setSessionStartTime(null)
+      setElapsed(0)
+      setActiveProgramId(null)
+      api.getSessionCounts().then(setSessionCounts).catch(showError)
+      refreshContinueCards()
+    } catch (e) {
+      showError(e)
+    } finally {
+      setDiscarding(false)
+    }
+  }
+
+  const discardOpenSessionCard = async (openSessionId: string) => {
+    try {
+      await api.discardSession(openSessionId)
+      refreshContinueCards()
+    } catch (e) {
+      showError(e)
+    }
+  }
+
   const openProgramDetail = (programId: string) => {
     setViewProgramId(programId)
     setScreen('program-detail')
@@ -1572,15 +1631,12 @@ export default function App() {
       <>
         {errorBanner}
         <HomeScreen
-          homeCard={homeCard}
+          continueCards={continueCards}
           sessionCounts={sessionCounts}
           starting={starting}
-          onResumeSession={() => {
-            if (homeCard.kind === 'session') resumeOpenSession(homeCard.open)
-          }}
-          onContinueProgram={() => {
-            if (homeCard.kind === 'program') startProgramDay(homeCard.programId, homeCard.dayNumber)
-          }}
+          onResumeSession={resumeOpenSession}
+          onDiscardSession={discardOpenSessionCard}
+          onContinueProgram={(programId, dayNumber) => startProgramDay(programId, dayNumber)}
           onAdhoc={startAdhoc}
           onBrowsePrograms={() => setScreen('programs')}
         />
@@ -1652,11 +1708,13 @@ export default function App() {
           exercises={exercises}
           elapsed={sessionStartTime ? elapsed : null}
           finishing={finishing}
+          discarding={discarding}
           onBack={() => setScreen('home')}
           onBeginWorkout={beginWorkout}
           onGoToExercise={goToExercise}
           onAddExercise={() => setScreen('library')}
           onFinish={finishSession}
+          onDiscard={discardActiveSession}
         />
       </>
     )
@@ -1719,7 +1777,7 @@ export default function App() {
             setElapsed(0)
             setActiveProgramId(null)
             api.getSessionCounts().then(setSessionCounts).catch(showError)
-            refreshHomeCard()
+            refreshContinueCards()
           }}
         />
       </>

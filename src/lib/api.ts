@@ -349,6 +349,14 @@ export async function addLoggedSet(
   if (error) throw error
 }
 
+export async function discardSession(sessionId: string): Promise<void> {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ finished_at: new Date().toISOString() })
+    .eq('id', sessionId)
+  if (error) throw error
+}
+
 export async function finishSession(
   sessionId: string,
   durationSeconds: number,
