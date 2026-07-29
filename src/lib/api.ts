@@ -304,11 +304,23 @@ export async function resetProgramProgress(programId: string): Promise<void> {
 
 // ─── Sessions / logging ─────────────────────────────────────────────────────
 
+export async function discardAllOpenSessions(): Promise<void> {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ finished_at: new Date().toISOString() })
+    .is('finished_at', null)
+  if (error) throw error
+}
+
 export async function createSession(opts: {
   programId?: string
   programWeekNumber?: number
   programDayNumber?: number
 }): Promise<string> {
+  // The app only ever works one session at a time — starting a new one
+  // always closes out anything left open, so open sessions can't pile up.
+  await discardAllOpenSessions()
+
   const { data, error } = await supabase
     .from('sessions')
     .insert({

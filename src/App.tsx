@@ -98,7 +98,7 @@ function HomeScreen({
   sessionCounts: { thisWeek: number; thisMonth: number } | null
   starting: boolean
   onResumeSession: (open: OpenSession) => void
-  onDiscardSession: (sessionId: string) => void
+  onDiscardSession: () => void
   onContinueProgram: (programId: string, dayNumber: number) => void
   onAdhoc: () => void
   onBrowsePrograms: () => void
@@ -135,7 +135,7 @@ function HomeScreen({
                     className="shrink-0 w-56 bg-surface border border-lime/25 rounded-sm p-4 flex flex-col relative"
                   >
                     <button
-                      onClick={() => onDiscardSession(card.open.sessionId)}
+                      onClick={onDiscardSession}
                       title="Discard this session"
                       className="absolute top-2.5 right-2.5 text-muted hover:text-ink transition-colors text-xs w-5 h-5 flex items-center justify-center"
                     >
@@ -1569,9 +1569,11 @@ export default function App() {
     }
   }
 
-  const discardOpenSessionCard = async (openSessionId: string) => {
+  const discardOpenSessionCard = async () => {
     try {
-      await api.discardSession(openSessionId)
+      // Clear the whole backlog, not just the one card shown — the app
+      // never intends to have more than one open session at a time.
+      await api.discardAllOpenSessions()
       refreshContinueCards()
     } catch (e) {
       showError(e)
