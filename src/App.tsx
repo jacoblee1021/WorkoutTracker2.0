@@ -449,7 +449,7 @@ interface LibraryProps {
   allGroups: string[]
   filter: string
   search: string
-  addedIds: string[]
+  addedExercises: ExerciseEntry[]
   onFilterChange: (g: string) => void
   onSearchChange: (s: string) => void
   onAdd: (ex: ExerciseDef) => void
@@ -457,9 +457,10 @@ interface LibraryProps {
 }
 
 function LibraryScreen({
-  library, loading, allGroups, filter, search, addedIds,
+  library, loading, allGroups, filter, search, addedExercises,
   onFilterChange, onSearchChange, onAdd, onBack,
 }: LibraryProps) {
+  const addedIds = addedExercises.map(e => e.id)
   return (
     <Shell>
       <header className="px-6 pt-10 pb-5 flex justify-between items-center border-b border-border">
@@ -479,10 +480,29 @@ function LibraryScreen({
         <input
           value={search}
           onChange={e => onSearchChange(e.target.value)}
-          placeholder="Search exercises..."
+          placeholder="Search by name or muscle group..."
           className="w-full bg-surface border border-border rounded-sm px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:border-lime/30 transition-colors"
+          autoFocus
         />
       </div>
+
+      {addedExercises.length > 0 && (
+        <div className="px-6 pb-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">
+            Added so far ({addedExercises.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {addedExercises.map(ex => (
+              <span
+                key={ex.sessionExerciseId}
+                className="text-xs px-2.5 py-1 rounded-sm bg-lime/10 border border-lime/30 text-lime"
+              >
+                {ex.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="px-6 pb-4 flex gap-2 overflow-x-auto scrollbar-hide">
         {allGroups.map(g => (
@@ -502,7 +522,12 @@ function LibraryScreen({
 
       <div className="flex-1 overflow-y-auto px-6 pb-8 space-y-2 scrollbar-hide">
         {loading && <p className="text-center text-muted text-sm py-12">Loading...</p>}
-        {!loading && library.length === 0 && (
+        {!loading && library.length === 0 && !search.trim() && filter === 'All' && (
+          <p className="text-center text-muted text-sm py-12">
+            Start typing an exercise name or muscle group.
+          </p>
+        )}
+        {!loading && library.length === 0 && (search.trim() || filter !== 'All') && (
           <p className="text-center text-muted text-sm py-12">No exercises found.</p>
         )}
         {!loading && library.map(ex => {
@@ -661,12 +686,24 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'library') return
+
+    // Empty box + "All" pill = nothing to search for yet; don't hit the DB.
+    if (!libSearch.trim() && libFilter === 'All') {
+      setLibResults([])
+      setLibLoading(false)
+      return
+    }
+
     setLibLoading(true)
-    api
-      .getExerciseLibrary(libSearch, libFilter)
-      .then(setLibResults)
-      .catch(showError)
-      .finally(() => setLibLoading(false))
+    const timeout = setTimeout(() => {
+      api
+        .getExerciseLibrary(libSearch, libFilter)
+        .then(setLibResults)
+        .catch(showError)
+        .finally(() => setLibLoading(false))
+    }, 300) // debounce: wait for the person to stop typing
+
+    return () => clearTimeout(timeout)
   }, [screen, libSearch, libFilter])
 
   useEffect(() => {
@@ -870,7 +907,7 @@ export default function App() {
           allGroups={muscleGroups}
           filter={libFilter}
           search={libSearch}
-          addedIds={exercises.map(e => e.id)}
+          addedExercises={exercises}
           onFilterChange={setLibFilter}
           onSearchChange={setLibSearch}
           onAdd={addExercise}

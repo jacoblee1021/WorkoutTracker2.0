@@ -46,9 +46,22 @@ export async function getMuscleGroups(): Promise<string[]> {
 }
 
 export async function getExerciseLibrary(search: string, muscleGroup: string): Promise<ExerciseRow[]> {
-  let query = supabase.from('exercises').select('id, name, muscle_group, exercise_type, category').order('name')
+  const term = search.trim()
+
+  // Nothing typed and no pill selected: don't pull the whole table.
+  if (!term && muscleGroup === 'All') return []
+
+  let query = supabase
+    .from('exercises')
+    .select('id, name, muscle_group, exercise_type, category')
+    .order('name')
+    .limit(30)
+
   if (muscleGroup !== 'All') query = query.eq('muscle_group', muscleGroup)
-  if (search.trim()) query = query.ilike('name', `%${search.trim()}%`)
+  // Typeahead matches either the exercise name or its muscle group,
+  // so typing "biceps" works the same as tapping the Biceps pill.
+  if (term) query = query.or(`name.ilike.%${term}%,muscle_group.ilike.%${term}%`)
+
   const { data, error } = await query
   if (error) throw error
   return data ?? []
