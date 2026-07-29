@@ -125,17 +125,7 @@ function HomeScreen({
               <p className="text-xs text-muted">Loading your progress...</p>
             </div>
           ) : continueCards.length === 0 ? (
-            <button
-              onClick={onBrowsePrograms}
-              className="mx-6 bg-surface border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center"
-              style={{ width: 'calc(100% - 3rem)' }}
-            >
-              <div>
-                <h2 className="text-base font-display font-600 text-ink">Start a Program</h2>
-                <p className="text-xs text-muted mt-1">Follow a structured routine and track progress</p>
-              </div>
-              <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-            </button>
+            <p className="mx-6 text-xs text-muted">No active session or program in progress.</p>
           ) : (
             <div className="flex gap-3 overflow-x-auto scrollbar-hide px-6 pb-1">
               {continueCards.map(card =>
@@ -194,17 +184,16 @@ function HomeScreen({
                   </button>
                 )
               )}
-              <button
-                onClick={onBrowsePrograms}
-                className="shrink-0 w-40 border border-dashed border-border rounded-sm p-4 text-left hover:border-lime/30 transition-colors flex flex-col justify-center items-center gap-2"
-              >
-                <span className="text-lime text-xl">+</span>
-                <span className="text-xs text-muted font-display uppercase tracking-widest text-center leading-relaxed">
-                  Browse Programs
-                </span>
-              </button>
             </div>
           )}
+          <div className="px-6 mt-3">
+            <button
+              onClick={onBrowsePrograms}
+              className="w-full border border-dashed border-border rounded-sm py-3 text-muted text-xs font-display uppercase tracking-[0.18em] hover:border-lime/30 hover:text-lime transition-colors"
+            >
+              Browse Programs
+            </button>
+          </div>
         </section>
 
         <div className="flex items-center gap-4 px-6">
@@ -1339,7 +1328,11 @@ export default function App() {
       const cards: ContinueCard[] = []
       if (open) cards.push({ kind: 'session', open })
 
-      const inProgress = overview.filter(p => p.completedDayCount > 0 && p.completedDayCount < p.dayCount)
+      // A program with an open session already has a card for it above —
+      // don't also show its separate "next day due" program card.
+      const inProgress = overview.filter(
+        p => p.completedDayCount > 0 && p.completedDayCount < p.dayCount && p.id !== open?.programId
+      )
       inProgress.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
       for (const p of inProgress) {
         const dayNumber = (p.completedDayCount % p.dayCount) + 1
