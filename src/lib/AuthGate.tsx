@@ -34,36 +34,49 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-ground text-ink font-body flex items-center justify-center px-6">
-        <form onSubmit={handleSignIn} className="w-full max-w-sm flex flex-col gap-4">
-          <h1 className="text-lg font-display uppercase tracking-[0.18em] text-center mb-2">Sign in</h1>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="border rounded px-3 py-2 bg-transparent"
-            autoComplete="username"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="border rounded px-3 py-2 bg-transparent"
-            autoComplete="current-password"
-            required
-          />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <button
-            type="submit"
-            disabled={signingIn}
-            className="border rounded px-3 py-2 font-display uppercase tracking-[0.14em] disabled:opacity-50"
-          >
-            {signingIn ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+      <div className="min-h-screen bg-ground text-ink font-body flex justify-center">
+        <div className="w-full max-w-[480px] min-h-screen flex flex-col items-center justify-center px-6">
+          <div className="w-full">
+            <div className="text-center mb-8">
+              <h1 className="text-4xl font-display font-700 text-ink tracking-tight">LIFT TRENDS</h1>
+            </div>
+
+            <form onSubmit={handleSignIn} className="border border-border rounded-sm p-6 space-y-4">
+              <div>
+                <label className="text-xs uppercase tracking-[0.18em] text-muted font-display">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="mt-2 w-full bg-transparent border border-border rounded-sm px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:bg-transparent focus:border-lime/40 transition-colors autofill:bg-transparent"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.18em] text-muted font-display">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="mt-2 w-full bg-transparent border border-border rounded-sm px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:bg-transparent focus:border-lime/40 transition-colors autofill:bg-transparent"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={signingIn}
+                className="w-full py-4 bg-lime text-ground text-xs font-display font-700 uppercase tracking-[0.2em] rounded-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {signingIn ? 'Signing in…' : 'Sign In'}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     )
   }
