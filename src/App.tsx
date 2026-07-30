@@ -133,163 +133,175 @@ function HomeScreen({
         </div>
       </header>
 
-      <div className="flex-1 space-y-8">
-        <section>
-          <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display px-6">Continue</p>
-          {continueCards === 'loading' ? (
-            <div className="mx-6 bg-surface border border-border rounded-sm p-5">
-              <p className="text-xs text-muted">Loading your progress...</p>
-            </div>
-          ) : continueCards.length === 0 ? (
-            <p className="mx-6 text-xs text-muted">No active session or program in progress.</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide px-6 pb-1">
-              {continueCards.map(card =>
-                card.kind === 'session' ? (
-                  <div
-                    key={`session-${card.open.sessionId}`}
-                    className="shrink-0 w-56 bg-surface border border-lime/25 rounded-sm p-4 flex flex-col relative"
-                  >
-                    <button
-                      onClick={onDiscardSession}
-                      title="Discard this session"
-                      className="absolute top-2.5 right-2.5 text-muted hover:text-ink transition-colors text-xs w-5 h-5 flex items-center justify-center"
+      <div className="flex-1 space-y-10">
+        <div className="space-y-6">
+          <h2 className="px-6 text-lg font-display font-700 text-ink">Start a Workout</h2>
+
+          <section>
+            <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display px-6">Continue</p>
+            {continueCards === 'loading' ? (
+              <div className="mx-6 bg-surface border border-border rounded-sm p-5">
+                <p className="text-xs text-muted">Loading your progress...</p>
+              </div>
+            ) : continueCards.length === 0 ? (
+              <p className="mx-6 text-xs text-muted">No active session or program in progress.</p>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto scrollbar-hide px-6 pb-1">
+                {continueCards.map(card =>
+                  card.kind === 'session' ? (
+                    <div
+                      key={`session-${card.open.sessionId}`}
+                      className="shrink-0 w-56 bg-surface border border-lime/25 rounded-sm p-4 flex flex-col relative"
                     >
-                      ✕
-                    </button>
+                      <button
+                        onClick={onDiscardSession}
+                        title="Discard this session"
+                        className="absolute top-2.5 right-2.5 text-muted hover:text-ink transition-colors text-xs w-5 h-5 flex items-center justify-center"
+                      >
+                        ✕
+                      </button>
+                      <button
+                        onClick={() => onResumeSession(card.open)}
+                        disabled={starting}
+                        className="text-left flex-1 disabled:opacity-50"
+                      >
+                        <p className="text-[10px] text-lime font-display uppercase tracking-[0.15em]">
+                          Continue Session
+                        </p>
+                        <p className="text-base font-display font-600 text-ink mt-1.5 leading-tight">
+                          {card.open.dayLabel}
+                        </p>
+                        <p className="text-xs text-muted mt-1 font-display">
+                          {card.open.exercises.length} exercises
+                        </p>
+                        <div className="mt-3 flex justify-end items-center">
+                          <span className="text-lime">{starting ? '···' : '→'}</span>
+                        </div>
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => onResumeSession(card.open)}
+                      key={`program-${card.programId}`}
+                      onClick={() => onContinueProgram(card.programId, card.dayNumber)}
                       disabled={starting}
-                      className="text-left flex-1 disabled:opacity-50"
+                      className="shrink-0 w-56 bg-surface border border-border rounded-sm p-4 text-left hover:border-lime/40 transition-colors group flex flex-col disabled:opacity-50"
                     >
-                      <p className="text-[10px] text-lime font-display uppercase tracking-[0.15em]">
-                        Continue Session
+                      <p className="text-[10px] text-muted font-display uppercase tracking-[0.15em] truncate">
+                        {card.title}
                       </p>
                       <p className="text-base font-display font-600 text-ink mt-1.5 leading-tight">
-                        {card.open.dayLabel}
+                        {card.dayLabel}
                       </p>
                       <p className="text-xs text-muted mt-1 font-display">
-                        {card.open.exercises.length} exercises
+                        {card.completedDayCount}/{card.dayCount} days done
                       </p>
                       <div className="mt-3 flex justify-end items-center">
-                        <span className="text-lime">{starting ? '···' : '→'}</span>
+                        <span className="text-lime group-hover:translate-x-0.5 transition-transform inline-block">
+                          {starting ? '···' : '→'}
+                        </span>
                       </div>
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    key={`program-${card.programId}`}
-                    onClick={() => onContinueProgram(card.programId, card.dayNumber)}
-                    disabled={starting}
-                    className="shrink-0 w-56 bg-surface border border-border rounded-sm p-4 text-left hover:border-lime/40 transition-colors group flex flex-col disabled:opacity-50"
-                  >
-                    <p className="text-[10px] text-muted font-display uppercase tracking-[0.15em] truncate">
-                      {card.title}
-                    </p>
-                    <p className="text-base font-display font-600 text-ink mt-1.5 leading-tight">
-                      {card.dayLabel}
-                    </p>
-                    <p className="text-xs text-muted mt-1 font-display">
-                      {card.completedDayCount}/{card.dayCount} days done
-                    </p>
-                    <div className="mt-3 flex justify-end items-center">
-                      <span className="text-lime group-hover:translate-x-0.5 transition-transform inline-block">
-                        {starting ? '···' : '→'}
-                      </span>
-                    </div>
-                  </button>
-                )
-              )}
-            </div>
-          )}
-          <div className="px-6 mt-3">
+                  )
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="px-6">
             <button
               onClick={onBrowsePrograms}
-              className="w-full border border-dashed border-border rounded-sm py-3 text-muted text-xs font-display uppercase tracking-[0.18em] hover:border-lime/30 hover:text-lime transition-colors"
+              className="w-full border border-dashed border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center"
             >
-              Browse Programs
+              <div>
+                <h3 className="text-base font-display font-500 text-ink">Browse Programs</h3>
+                <p className="text-xs text-muted mt-1">Explore and start a structured routine</p>
+              </div>
+              <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
             </button>
-          </div>
-        </section>
+          </section>
 
-        <div className="flex items-center gap-4 px-6">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs text-muted uppercase tracking-[0.2em] font-display">or</span>
-          <div className="flex-1 h-px bg-border" />
+          <div className="flex items-center gap-4 px-6">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted uppercase tracking-[0.2em] font-display">or</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <section className="px-6">
+            <button
+              onClick={onAdhoc}
+              disabled={starting}
+              className="w-full border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center disabled:opacity-50"
+            >
+              <div>
+                <h3 className="text-base font-display font-500 text-ink">Start Empty Session</h3>
+                <p className="text-xs text-muted mt-1">Build your set from the exercise library</p>
+              </div>
+              <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+            </button>
+          </section>
         </div>
 
-        <section className="px-6">
-          <button
-            onClick={onAdhoc}
-            disabled={starting}
-            className="w-full border border-border rounded-sm p-5 text-left hover:border-lime/30 transition-colors group flex justify-between items-center disabled:opacity-50"
-          >
-            <div>
-              <h2 className="text-base font-display font-500 text-ink">Start Empty Session</h2>
-              <p className="text-xs text-muted mt-1">Build your set from the exercise library</p>
-            </div>
-            <span className="text-lime text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-          </button>
-        </section>
+        <div className="space-y-6">
+          <h2 className="px-6 text-lg font-display font-700 text-ink">This Week</h2>
 
-        <section className="px-6">
-          <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">This Week</p>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
-              <p className="text-xl font-display font-700 text-lime tabular-nums">
-                {weeklyStats ? weeklyStats.sessions : '–'}
-              </p>
-              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Sessions</p>
+          <section className="px-6">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+                <p className="text-xl font-display font-700 text-lime tabular-nums">
+                  {weeklyStats ? weeklyStats.sessions : '–'}
+                </p>
+                <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Sessions</p>
+              </div>
+              <div
+                className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center"
+                title="An exercise's total volume (reps × weight) beat its previous best"
+              >
+                <p className="text-xl font-display font-700 text-lime tabular-nums">
+                  {weeklyStats ? weeklyStats.prsSet : '–'}
+                </p>
+                <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">PRs Set</p>
+              </div>
+              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+                <p className="text-xl font-display font-700 text-lime tabular-nums">
+                  {weeklyStats ? fmtDuration(weeklyStats.totalMinutes) : '–'}
+                </p>
+                <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Total Time</p>
+              </div>
             </div>
-            <div
-              className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center"
-              title="An exercise's total volume (reps × weight) beat its previous best"
-            >
-              <p className="text-xl font-display font-700 text-lime tabular-nums">
-                {weeklyStats ? weeklyStats.prsSet : '–'}
-              </p>
-              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">PRs Set</p>
-            </div>
-            <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
-              <p className="text-xl font-display font-700 text-lime tabular-nums">
-                {weeklyStats ? fmtDuration(weeklyStats.totalMinutes) : '–'}
-              </p>
-              <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Total Time</p>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="px-6">
-          <div className="flex gap-2 mb-3.5 md:hidden">
-            <button
-              onClick={() => setInsightTab('trend')}
-              className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
-                insightTab === 'trend' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
-              }`}
-            >
-              Strength Trend
-            </button>
-            <button
-              onClick={() => setInsightTab('focus')}
-              className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
-                insightTab === 'focus' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
-              }`}
-            >
-              Muscle Focus
-            </button>
-          </div>
+          <section className="px-6">
+            <div className="flex gap-2 mb-3.5 md:hidden">
+              <button
+                onClick={() => setInsightTab('trend')}
+                className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
+                  insightTab === 'trend' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
+                }`}
+              >
+                Strength Trend
+              </button>
+              <button
+                onClick={() => setInsightTab('focus')}
+                className={`flex-1 py-2.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
+                  insightTab === 'focus' ? 'border-lime/40 text-lime bg-lime/10' : 'border-border text-muted'
+                }`}
+              >
+                Muscle Focus
+              </button>
+            </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[1.3fr_1fr] md:gap-4">
-            <div className={insightTab === 'trend' ? 'block' : 'hidden md:block'}>
-              <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Strength Trend</p>
-              <StrengthTrendCard />
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-[1.3fr_1fr] md:gap-4">
+              <div className={insightTab === 'trend' ? 'block' : 'hidden md:block'}>
+                <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Strength Trend</p>
+                <StrengthTrendCard />
+              </div>
+              <div className={insightTab === 'focus' ? 'block' : 'hidden md:block'}>
+                <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Muscle Focus</p>
+                <MuscleFocusCard />
+              </div>
             </div>
-            <div className={insightTab === 'focus' ? 'block' : 'hidden md:block'}>
-              <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Muscle Focus</p>
-              <MuscleFocusCard />
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
 
       <div className="pb-10" />
