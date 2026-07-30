@@ -39,10 +39,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="w-full">
             <div className="text-center mb-8">
               <p className="text-xs tracking-[0.2em] uppercase text-muted font-display">Welcome back</p>
-              <h1 className="text-4xl font-display font-700 text-ink mt-1 tracking-tight">LIFT</h1>
+              <h1 className="text-4xl font-display font-700 text-ink mt-1 tracking-tight">LIFT TRENDS</h1>
             </div>
 
-            <form onSubmit={handleSignIn} className="bg-surface border border-border rounded-sm p-6 space-y-4">
+            <form onSubmit={handleSignIn} className="border border-border rounded-sm p-6 space-y-4">
               <div>
                 <label className="text-xs uppercase tracking-[0.18em] text-muted font-display">Email</label>
                 <input
