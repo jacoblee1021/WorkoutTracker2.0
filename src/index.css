@@ -25,3 +25,16 @@ html, body {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Chrome/Safari paint autofilled inputs with an opaque background via
+   internal box-shadow, ignoring background-color — this overrides that
+   so autofilled fields stay transparent like the rest of the form. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset;
+  box-shadow: 0 0 0px 1000px transparent inset;
+  -webkit-text-fill-color: #eaeaec;
+  caret-color: #eaeaec;
+  transition: background-color 0s 600000s, color 0s 600000s;
+}
