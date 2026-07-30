@@ -70,6 +70,10 @@ function fmtWeight(w: number) {
   return w % 1 === 0 ? String(w) : w.toFixed(1)
 }
 
+function fmtVolume(v: number) {
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v))
+}
+
 function fmtDuration(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60)
   const m = totalMinutes % 60
@@ -439,7 +443,7 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
   const n = trend.points.length
 
   const points = trend.points
-    .map((w, i) => ({ i, bucketStart: w.bucketStart, weight: w.maxWeight }))
+    .map((w, i) => ({ i, bucketStart: w.bucketStart, weight: w.avgVolume }))
     .filter((p): p is { i: number; bucketStart: string; weight: number } => p.weight !== null)
 
   if (points.length === 0) {
@@ -462,11 +466,11 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
   return (
     <div>
       <div className="flex items-baseline gap-2.5 mb-1">
-        <span className="text-sm font-display font-600 text-ink">{trend.exerciseName}</span>
+        <span className="text-sm font-display font-600 text-ink">{trend.muscleGroup}</span>
         {deltaLabel && <span className="text-xs font-display font-600 text-lime tabular-nums">{deltaLabel}</span>}
       </div>
       <p className="text-xs text-muted mb-3.5">
-        Top set weight · {BUCKET_UNIT_LABEL[trend.bucketUnit]}
+        Avg volume / session · {BUCKET_UNIT_LABEL[trend.bucketUnit]}
       </p>
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full block overflow-visible" style={{ height: 120 }}>
@@ -521,7 +525,7 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
             className="absolute -top-1.5 -translate-x-1/2 -translate-y-full bg-ground border border-border rounded-sm px-2.5 py-1.5 pointer-events-none whitespace-nowrap"
             style={{ left: `${(xAt(hovered.i) / W) * 100}%` }}
           >
-            <p className="text-xs font-display font-600 text-lime tabular-nums">{fmtWeight(hovered.weight)} lbs</p>
+            <p className="text-xs font-display font-600 text-lime tabular-nums">{fmtVolume(hovered.weight)} lbs</p>
             <p className="text-[10px] text-muted font-display">
               {new Date(hovered.bucketStart + 'T00:00:00').toLocaleDateString(
                 'en-US',

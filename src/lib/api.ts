@@ -86,13 +86,15 @@ export interface MuscleFocusEntry {
 
 export interface StrengthTrendPoint {
   bucketStart: string
-  maxWeight: number | null
+  /** Total volume (reps × weight) across the muscle group, divided by
+   *  distinct sessions touching it, for this bucket. */
+  avgVolume: number | null
 }
 
 export type StrengthTrendBucketUnit = 'day' | 'week' | 'month'
 
 export interface StrengthTrend {
-  exerciseName: string
+  muscleGroup: string
   bucketUnit: StrengthTrendBucketUnit
   points: StrengthTrendPoint[]
   deltaPct: number | null
@@ -456,33 +458,40 @@ export async function getStatsForRange(range: DateRange): Promise<RangeStats> {
   }, 0)
   const totalMinutes = Math.round(totalSeconds / 60)
 
-  // Volume-based PRs: an exercise counts if its total volume in a session
-  // within the range beats the best volume it ever hit in a session before
-  // the range started.
+  // Volume-based PRs: walk every exercise's history in chronological order
+  // and flag an instance whenever its volume beats everything logged for
+  // that exercise before it — a true PR moment. "PRs Set" is how many of
+  // those moments fall inside the selected range, which is well-defined
+  // even for All Time (it just counts every PR you've ever hit).
   const { data: rows, error: volErr } = await supabase
     .from('session_exercises')
-    .select('exercise_id, logged_sets(reps, weight), session:sessions(exercise_date)')
+    .select('exercise_id, logged_sets(reps, weight), session:sessions(exercise_date, created_at)')
   if (volErr) throw volErr
 
-  const bestPrior = new Map<string, number>()
-  const bestInRange = new Map<string, number>()
+  const instances: { exerciseId: string; date: string; createdAt: string; volume: number }[] = []
   for (const row of (rows ?? []) as unknown as Array<{
     exercise_id: string
     logged_sets: { reps: number; weight: number }[]
-    session: { exercise_date: string } | null
+    session: { exercise_date: string; created_at: string } | null
   }>) {
     const date = row.session?.exercise_date
-    if (!date) continue
+    const createdAt = row.session?.created_at
+    if (!date || !createdAt) continue
     const volume = row.logged_sets.reduce((s, set) => s + set.reps * set.weight, 0)
     if (volume <= 0) continue
-    const inRange = date <= range.end && (!range.start || date >= range.start)
-    const target = inRange ? bestInRange : bestPrior
-    target.set(row.exercise_id, Math.max(target.get(row.exercise_id) ?? 0, volume))
+    instances.push({ exerciseId: row.exercise_id, date, createdAt, volume })
   }
+  instances.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
 
+  const runningBest = new Map<string, number>()
   let prsSet = 0
-  for (const [exerciseId, volume] of bestInRange) {
-    if (volume > (bestPrior.get(exerciseId) ?? 0)) prsSet++
+  for (const inst of instances) {
+    const prevBest = runningBest.get(inst.exerciseId) ?? 0
+    if (inst.volume > prevBest) {
+      runningBest.set(inst.exerciseId, inst.volume)
+      const inRange = inst.date <= range.end && (!range.start || inst.date >= range.start)
+      if (inRange) prsSet++
+    }
   }
 
   return { sessions, prsSet, totalMinutes }
@@ -576,47 +585,19 @@ function buildBucketStarts(start: Date, end: Date, unit: StrengthTrendBucketUnit
 }
 
 export async function getStrengthTrend(muscleGroup: string, range: DateRange): Promise<StrengthTrend | null> {
-  // Find the most-logged exercise within this muscle group (all-time, so the
-  // chosen exercise stays consistent as the timeframe is switched).
-  const { data: candidates, error: candErr } = await supabase
-    .from('session_exercises')
-    .select('exercise_id, exercise:exercises!inner(name, muscle_group), logged_sets(id)')
-    .eq('exercise.muscle_group', muscleGroup)
-  if (candErr) throw candErr
-
-  const setCounts = new Map<string, { name: string; count: number }>()
-  for (const row of (candidates ?? []) as unknown as Array<{
-    exercise_id: string
-    exercise: { name: string }
-    logged_sets: { id: string }[]
-  }>) {
-    const entry = setCounts.get(row.exercise_id) ?? { name: row.exercise.name, count: 0 }
-    entry.count += row.logged_sets.length
-    setCounts.set(row.exercise_id, entry)
-  }
-
-  let topExerciseId: string | null = null
-  let topEntry: { name: string; count: number } | null = null
-  for (const [id, entry] of setCounts) {
-    if (!topEntry || entry.count > topEntry.count) {
-      topExerciseId = id
-      topEntry = entry
-    }
-  }
-  if (!topExerciseId || !topEntry || topEntry.count === 0) return null
-
   let startStr = range.start
   if (!startStr) {
     const { data: earliest, error: earliestErr } = await supabase
       .from('session_exercises')
-      .select('session:sessions!inner(exercise_date)')
-      .eq('exercise_id', topExerciseId)
+      .select('exercise:exercises!inner(muscle_group), session:sessions!inner(exercise_date)')
+      .eq('exercise.muscle_group', muscleGroup)
       .order('exercise_date', { referencedTable: 'sessions', ascending: true })
       .limit(1)
       .maybeSingle()
     if (earliestErr) throw earliestErr
     const earliestRow = earliest as unknown as { session: { exercise_date: string } } | null
-    startStr = earliestRow?.session?.exercise_date ?? range.end
+    if (!earliestRow) return null
+    startStr = earliestRow.session.exercise_date
   }
 
   const startDate = new Date(startStr + 'T00:00:00')
@@ -625,43 +606,58 @@ export async function getStrengthTrend(muscleGroup: string, range: DateRange): P
   const bucketStarts = buildBucketStarts(startDate, endDate, unit)
   if (bucketStarts.length === 0) bucketStarts.push(startStr)
 
-  const { data: sets, error: setsErr } = await supabase
+  // Every set from every exercise in this muscle group, in range — summed to
+  // a per-bucket volume total, then divided by how many distinct sessions
+  // touched this muscle group in that bucket. That average-per-session
+  // normalizes for training frequency: a lighter week doesn't read as
+  // weaker just because you trained the group fewer times.
+  const { data: rows, error } = await supabase
     .from('session_exercises')
-    .select('logged_sets(weight), session:sessions!inner(exercise_date)')
-    .eq('exercise_id', topExerciseId)
+    .select('session_id, logged_sets(reps, weight), exercise:exercises!inner(muscle_group), session:sessions!inner(exercise_date)')
+    .eq('exercise.muscle_group', muscleGroup)
     .gte('session.exercise_date', bucketStarts[0])
     .lte('session.exercise_date', range.end)
-  if (setsErr) throw setsErr
+  if (error) throw error
 
-  const maxByBucket = new Map<string, number>()
-  for (const row of (sets ?? []) as unknown as Array<{
-    logged_sets: { weight: number }[]
-    session: { exercise_date: string } | null
-  }>) {
-    const date = row.session?.exercise_date
-    if (!date || row.logged_sets.length === 0) continue
+  const bucketFor = (date: string): string => {
     let bucket = bucketStarts[0]
     for (const b of bucketStarts) {
       if (b <= date) bucket = b
       else break
     }
-    const maxWeightInRow = Math.max(...row.logged_sets.map(s => s.weight))
-    if (maxWeightInRow <= 0) continue
-    maxByBucket.set(bucket, Math.max(maxByBucket.get(bucket) ?? 0, maxWeightInRow))
+    return bucket
   }
 
-  const points: StrengthTrendPoint[] = bucketStarts.map(b => ({
-    bucketStart: b,
-    maxWeight: maxByBucket.get(b) ?? null,
-  }))
+  const volumeByBucket = new Map<string, number>()
+  const sessionsByBucket = new Map<string, Set<string>>()
+  for (const row of (rows ?? []) as unknown as Array<{
+    session_id: string
+    logged_sets: { reps: number; weight: number }[]
+    session: { exercise_date: string } | null
+  }>) {
+    const date = row.session?.exercise_date
+    if (!date) continue
+    const volume = row.logged_sets.reduce((s, set) => s + set.reps * set.weight, 0)
+    const bucket = bucketFor(date)
+    volumeByBucket.set(bucket, (volumeByBucket.get(bucket) ?? 0) + volume)
+    if (!sessionsByBucket.has(bucket)) sessionsByBucket.set(bucket, new Set())
+    sessionsByBucket.get(bucket)!.add(row.session_id)
+  }
 
-  const withData = points.filter(p => p.maxWeight !== null)
+  const points: StrengthTrendPoint[] = bucketStarts.map(b => {
+    const totalVolume = volumeByBucket.get(b)
+    const sessionCount = sessionsByBucket.get(b)?.size ?? 0
+    const avgVolume = totalVolume && sessionCount > 0 ? Math.round(totalVolume / sessionCount) : null
+    return { bucketStart: b, avgVolume }
+  })
+
+  const withData = points.filter(p => p.avgVolume !== null)
   const deltaPct =
     withData.length >= 2
       ? Math.round(
-          ((withData[withData.length - 1].maxWeight! - withData[0].maxWeight!) / withData[0].maxWeight!) * 100
+          ((withData[withData.length - 1].avgVolume! - withData[0].avgVolume!) / withData[0].avgVolume!) * 100
         )
       : null
 
-  return { exerciseName: topEntry.name, bucketUnit: unit, points, deltaPct }
+  return { muscleGroup, bucketUnit: unit, points, deltaPct }
 }
