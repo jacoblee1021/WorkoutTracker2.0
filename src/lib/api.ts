@@ -587,18 +587,36 @@ function buildBucketStarts(start: Date, end: Date, unit: StrengthTrendBucketUnit
 export async function getStrengthTrend(muscleGroup: string, range: DateRange): Promise<StrengthTrend | null> {
   let startStr = range.start
   if (!startStr) {
-    const { data: earliest, error: earliestErr } = await supabase
+    // Plain, non-embedded lookups rather than ordering by a nested table
+    // while also inner-joining a different one in the same query — that
+    // combination was silently returning an arbitrary (often recent) row
+    // instead of the true earliest one, collapsing "All Time" down to
+    // almost nothing.
+    const { data: exIds, error: exErr } = await supabase.from('exercises').select('id').eq('muscle_group', muscleGroup)
+    if (exErr) throw exErr
+    const exerciseIds = (exIds ?? []).map(e => e.id)
+    if (exerciseIds.length === 0) return null
+
+    const { data: seRows, error: seErr } = await supabase
       .from('session_exercises')
-      .select('exercise:exercises!inner(muscle_group), session:sessions!inner(exercise_date)')
-      .eq('exercise.muscle_group', muscleGroup)
-      .order('exercise_date', { referencedTable: 'sessions', ascending: true })
+      .select('session_id')
+      .in('exercise_id', exerciseIds)
+    if (seErr) throw seErr
+    const sessionIds = Array.from(new Set((seRows ?? []).map(r => r.session_id)))
+    if (sessionIds.length === 0) return null
+
+    const { data: earliest, error: earliestErr } = await supabase
+      .from('sessions')
+      .select('exercise_date')
+      .in('id', sessionIds)
+      .order('exercise_date', { ascending: true })
       .limit(1)
       .maybeSingle()
     if (earliestErr) throw earliestErr
-    const earliestRow = earliest as unknown as { session: { exercise_date: string } } | null
-    if (!earliestRow) return null
-    startStr = earliestRow.session.exercise_date
+    if (!earliest) return null
+    startStr = earliest.exercise_date
   }
+  if (!startStr) return null
 
   const startDate = new Date(startStr + 'T00:00:00')
   const endDate = new Date(range.end + 'T00:00:00')
