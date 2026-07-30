@@ -64,7 +64,14 @@ export interface ProgramDetail {
   completedDayCount: number
 }
 
-export interface WeeklyStats {
+export interface DateRange {
+  /** Inclusive ISO date, or null for no lower bound ("all time"). */
+  start: string | null
+  /** Inclusive ISO date. */
+  end: string
+}
+
+export interface RangeStats {
   sessions: number
   prsSet: number
   totalMinutes: number
@@ -77,14 +84,17 @@ export interface MuscleFocusEntry {
   underFocused: boolean
 }
 
-export interface StrengthTrendWeek {
-  weekStart: string
+export interface StrengthTrendPoint {
+  bucketStart: string
   maxWeight: number | null
 }
 
+export type StrengthTrendBucketUnit = 'day' | 'week' | 'month'
+
 export interface StrengthTrend {
   exerciseName: string
-  weeks: StrengthTrendWeek[]
+  bucketUnit: StrengthTrendBucketUnit
+  points: StrengthTrendPoint[]
   deltaPct: number | null
 }
 
@@ -427,46 +437,35 @@ export async function finishSession(
   }
 }
 
-// ─── Home dashboard: weekly stats, muscle focus, strength trend ────────────
+// ─── Home dashboard: stats, muscle focus, strength trend ───────────────────
 
-// Monday 00:00 → Sunday of the current week, as exercise_date-comparable strings.
-function getWeekBounds(): { start: string; end: string } {
-  const now = new Date()
-  const daysSinceMonday = (now.getDay() + 6) % 7 // getDay(): 0=Sun..6=Sat
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - daysSinceMonday)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) }
-}
-
-export async function getWeeklyStats(): Promise<WeeklyStats> {
-  const { start, end } = getWeekBounds()
-
-  const { data: weekSessions, error: sessErr } = await supabase
+export async function getStatsForRange(range: DateRange): Promise<RangeStats> {
+  let sessQuery = supabase
     .from('sessions')
     .select('id, time_total')
     .not('finished_at', 'is', null)
-    .gte('exercise_date', start)
-    .lte('exercise_date', end)
+    .lte('exercise_date', range.end)
+  if (range.start) sessQuery = sessQuery.gte('exercise_date', range.start)
+  const { data: rangeSessions, error: sessErr } = await sessQuery
   if (sessErr) throw sessErr
 
-  const sessions = weekSessions?.length ?? 0
-  const totalSeconds = (weekSessions ?? []).reduce((sum, s) => {
+  const sessions = rangeSessions?.length ?? 0
+  const totalSeconds = (rangeSessions ?? []).reduce((sum, s) => {
     const match = /^(\d+)/.exec(String(s.time_total ?? ''))
     return sum + (match ? parseInt(match[1], 10) : 0)
   }, 0)
   const totalMinutes = Math.round(totalSeconds / 60)
 
-  // Volume-based PRs: an exercise counts if this week's total volume in a
-  // session beats the best volume it ever hit in a session before this week.
+  // Volume-based PRs: an exercise counts if its total volume in a session
+  // within the range beats the best volume it ever hit in a session before
+  // the range started.
   const { data: rows, error: volErr } = await supabase
     .from('session_exercises')
     .select('exercise_id, logged_sets(reps, weight), session:sessions(exercise_date)')
   if (volErr) throw volErr
 
   const bestPrior = new Map<string, number>()
-  const bestThisWeek = new Map<string, number>()
+  const bestInRange = new Map<string, number>()
   for (const row of (rows ?? []) as unknown as Array<{
     exercise_id: string
     logged_sets: { reps: number; weight: number }[]
@@ -476,27 +475,23 @@ export async function getWeeklyStats(): Promise<WeeklyStats> {
     if (!date) continue
     const volume = row.logged_sets.reduce((s, set) => s + set.reps * set.weight, 0)
     if (volume <= 0) continue
-    const target = date >= start && date <= end ? bestThisWeek : bestPrior
+    const inRange = date <= range.end && (!range.start || date >= range.start)
+    const target = inRange ? bestInRange : bestPrior
     target.set(row.exercise_id, Math.max(target.get(row.exercise_id) ?? 0, volume))
   }
 
   let prsSet = 0
-  for (const [exerciseId, weekVolume] of bestThisWeek) {
-    if (weekVolume > (bestPrior.get(exerciseId) ?? 0)) prsSet++
+  for (const [exerciseId, volume] of bestInRange) {
+    if (volume > (bestPrior.get(exerciseId) ?? 0)) prsSet++
   }
 
   return { sessions, prsSet, totalMinutes }
 }
 
-export async function getMuscleFocus(windowDays = 30): Promise<MuscleFocusEntry[]> {
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - windowDays)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-
-  const { data: sessions, error: sessErr } = await supabase
-    .from('sessions')
-    .select('id')
-    .gte('exercise_date', cutoffStr)
+export async function getMuscleFocus(range: DateRange): Promise<MuscleFocusEntry[]> {
+  let sessQuery = supabase.from('sessions').select('id').lte('exercise_date', range.end)
+  if (range.start) sessQuery = sessQuery.gte('exercise_date', range.start)
+  const { data: sessions, error: sessErr } = await sessQuery
   if (sessErr) throw sessErr
   const sessionIds = (sessions ?? []).map(s => s.id)
   if (sessionIds.length === 0) return []
@@ -546,8 +541,43 @@ export async function getTrainedMuscleGroups(): Promise<string[]> {
   return Array.from(groups).sort()
 }
 
-export async function getStrengthTrend(muscleGroup: string, weeks = 12): Promise<StrengthTrend | null> {
-  // Find the most-logged exercise within this muscle group.
+// Daily buckets for short ranges (readable as a line without being noisy),
+// weekly for medium ranges, monthly once a range spans over a year —
+// otherwise "All Time" over several years would produce hundreds of points.
+function chooseBucketUnit(startMs: number, endMs: number): StrengthTrendBucketUnit {
+  const days = (endMs - startMs) / 86400000
+  if (days <= 31) return 'day'
+  if (days <= 366) return 'week'
+  return 'month'
+}
+
+function buildBucketStarts(start: Date, end: Date, unit: StrengthTrendBucketUnit): string[] {
+  const starts: string[] = []
+  if (unit === 'day') {
+    const d = new Date(start)
+    while (d <= end) {
+      starts.push(d.toISOString().slice(0, 10))
+      d.setDate(d.getDate() + 1)
+    }
+  } else if (unit === 'week') {
+    const d = new Date(start)
+    while (d <= end) {
+      starts.push(d.toISOString().slice(0, 10))
+      d.setDate(d.getDate() + 7)
+    }
+  } else {
+    const d = new Date(start.getFullYear(), start.getMonth(), 1)
+    while (d <= end) {
+      starts.push(d.toISOString().slice(0, 10))
+      d.setMonth(d.getMonth() + 1)
+    }
+  }
+  return starts
+}
+
+export async function getStrengthTrend(muscleGroup: string, range: DateRange): Promise<StrengthTrend | null> {
+  // Find the most-logged exercise within this muscle group (all-time, so the
+  // chosen exercise stays consistent as the timeframe is switched).
   const { data: candidates, error: candErr } = await supabase
     .from('session_exercises')
     .select('exercise_id, exercise:exercises!inner(name, muscle_group), logged_sets(id)')
@@ -575,23 +605,35 @@ export async function getStrengthTrend(muscleGroup: string, weeks = 12): Promise
   }
   if (!topExerciseId || !topEntry || topEntry.count === 0) return null
 
-  // Weekly buckets, oldest → newest, ending on the current Mon–Sun week.
-  const { start: currentMonday } = getWeekBounds()
-  const bucketStarts: string[] = []
-  for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(currentMonday + 'T00:00:00')
-    d.setDate(d.getDate() - i * 7)
-    bucketStarts.push(d.toISOString().slice(0, 10))
+  let startStr = range.start
+  if (!startStr) {
+    const { data: earliest, error: earliestErr } = await supabase
+      .from('session_exercises')
+      .select('session:sessions!inner(exercise_date)')
+      .eq('exercise_id', topExerciseId)
+      .order('exercise_date', { referencedTable: 'sessions', ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (earliestErr) throw earliestErr
+    const earliestRow = earliest as unknown as { session: { exercise_date: string } } | null
+    startStr = earliestRow?.session?.exercise_date ?? range.end
   }
+
+  const startDate = new Date(startStr + 'T00:00:00')
+  const endDate = new Date(range.end + 'T00:00:00')
+  const unit = chooseBucketUnit(startDate.getTime(), endDate.getTime())
+  const bucketStarts = buildBucketStarts(startDate, endDate, unit)
+  if (bucketStarts.length === 0) bucketStarts.push(startStr)
 
   const { data: sets, error: setsErr } = await supabase
     .from('session_exercises')
     .select('logged_sets(weight), session:sessions!inner(exercise_date)')
     .eq('exercise_id', topExerciseId)
     .gte('session.exercise_date', bucketStarts[0])
+    .lte('session.exercise_date', range.end)
   if (setsErr) throw setsErr
 
-  const maxByWeek = new Map<string, number>()
+  const maxByBucket = new Map<string, number>()
   for (const row of (sets ?? []) as unknown as Array<{
     logged_sets: { weight: number }[]
     session: { exercise_date: string } | null
@@ -605,15 +647,15 @@ export async function getStrengthTrend(muscleGroup: string, weeks = 12): Promise
     }
     const maxWeightInRow = Math.max(...row.logged_sets.map(s => s.weight))
     if (maxWeightInRow <= 0) continue
-    maxByWeek.set(bucket, Math.max(maxByWeek.get(bucket) ?? 0, maxWeightInRow))
+    maxByBucket.set(bucket, Math.max(maxByBucket.get(bucket) ?? 0, maxWeightInRow))
   }
 
-  const weeksOut: StrengthTrendWeek[] = bucketStarts.map(b => ({
-    weekStart: b,
-    maxWeight: maxByWeek.get(b) ?? null,
+  const points: StrengthTrendPoint[] = bucketStarts.map(b => ({
+    bucketStart: b,
+    maxWeight: maxByBucket.get(b) ?? null,
   }))
 
-  const withData = weeksOut.filter(w => w.maxWeight !== null)
+  const withData = points.filter(p => p.maxWeight !== null)
   const deltaPct =
     withData.length >= 2
       ? Math.round(
@@ -621,5 +663,5 @@ export async function getStrengthTrend(muscleGroup: string, weeks = 12): Promise
         )
       : null
 
-  return { exerciseName: topEntry.name, weeks: weeksOut, deltaPct }
+  return { exerciseName: topEntry.name, bucketUnit: unit, points, deltaPct }
 }

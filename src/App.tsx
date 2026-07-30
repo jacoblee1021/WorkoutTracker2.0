@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import * as api from './lib/api'
 import type { ExerciseRow as ExerciseDef, OpenSession, ProgramDetail, ProgramSummary } from './lib/api'
-import type { MuscleFocusEntry, StrengthTrend, WeeklyStats } from './lib/api'
+import type { DateRange, MuscleFocusEntry, RangeStats, StrengthTrend } from './lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,35 @@ type ContinueCard =
       completedDayCount: number
       dayCount: number
     }
+
+type Timeframe = 'week' | 'month' | 'year' | 'all'
+
+const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
+  { key: 'week', label: 'This Week' },
+  { key: 'month', label: 'This Month' },
+  { key: 'year', label: 'This Year' },
+  { key: 'all', label: 'All Time' },
+]
+
+function getTimeframeRange(timeframe: Timeframe): DateRange {
+  const now = new Date()
+  const end = now.toISOString().slice(0, 10)
+  if (timeframe === 'week') {
+    const daysSinceMonday = (now.getDay() + 6) % 7 // getDay(): 0=Sun..6=Sat
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - daysSinceMonday)
+    return { start: monday.toISOString().slice(0, 10), end }
+  }
+  if (timeframe === 'month') {
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: first.toISOString().slice(0, 10), end }
+  }
+  if (timeframe === 'year') {
+    const first = new Date(now.getFullYear(), 0, 1)
+    return { start: first.toISOString().slice(0, 10), end }
+  }
+  return { start: null, end }
+}
 
 function fmtTime(s: number) {
   const m = Math.floor(s / 60)
@@ -109,12 +138,16 @@ function HomeScreen({
   onAdhoc: () => void
   onBrowsePrograms: () => void
 }) {
-  const [weeklyStats, setWeeklyStats] = useState<WeeklyStats | null>(null)
+  const [timeframe, setTimeframe] = useState<Timeframe>('week')
+  const [rangeStats, setRangeStats] = useState<RangeStats | null>(null)
   const [insightTab, setInsightTab] = useState<'trend' | 'focus'>('trend')
 
+  const range = getTimeframeRange(timeframe)
+
   useEffect(() => {
-    api.getWeeklyStats().then(setWeeklyStats).catch(() => setWeeklyStats(null))
-  }, [])
+    setRangeStats(null)
+    api.getStatsForRange(range).then(setRangeStats).catch(() => setRangeStats(null))
+  }, [timeframe])
 
   return (
     <Shell wide>
@@ -242,13 +275,32 @@ function HomeScreen({
         </div>
 
         <div className="space-y-6">
-          <h2 className="px-6 text-lg font-display font-700 text-ink">This Week</h2>
+          <div className="space-y-3">
+            <h2 className="px-6 text-lg font-display font-700 text-ink">
+              {TIMEFRAME_OPTIONS.find(o => o.key === timeframe)?.label}
+            </h2>
+            <div className="flex gap-2 px-6 overflow-x-auto scrollbar-hide">
+              {TIMEFRAME_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setTimeframe(opt.key)}
+                  className={`shrink-0 px-3 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider border transition-colors ${
+                    timeframe === opt.key
+                      ? 'border-lime/40 text-lime bg-lime/10'
+                      : 'border-border text-muted hover:border-ink hover:text-ink'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <section className="px-6">
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center">
                 <p className="text-xl font-display font-700 text-lime tabular-nums">
-                  {weeklyStats ? weeklyStats.sessions : '–'}
+                  {rangeStats ? rangeStats.sessions : '–'}
                 </p>
                 <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Sessions</p>
               </div>
@@ -257,13 +309,13 @@ function HomeScreen({
                 title="An exercise's total volume (reps × weight) beat its previous best"
               >
                 <p className="text-xl font-display font-700 text-lime tabular-nums">
-                  {weeklyStats ? weeklyStats.prsSet : '–'}
+                  {rangeStats ? rangeStats.prsSet : '–'}
                 </p>
                 <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">PRs Set</p>
               </div>
-              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center" title="Monday–Sunday">
+              <div className="bg-surface border border-border rounded-sm py-3.5 px-2 text-center">
                 <p className="text-xl font-display font-700 text-lime tabular-nums">
-                  {weeklyStats ? fmtDuration(weeklyStats.totalMinutes) : '–'}
+                  {rangeStats ? fmtDuration(rangeStats.totalMinutes) : '–'}
                 </p>
                 <p className="text-[9.5px] text-muted uppercase tracking-wider mt-1 font-display">Total Time</p>
               </div>
@@ -293,11 +345,11 @@ function HomeScreen({
             <div className="grid grid-cols-1 gap-6 md:grid-cols-[1.3fr_1fr] md:gap-4">
               <div className={insightTab === 'trend' ? 'block' : 'hidden md:block'}>
                 <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Strength Trend</p>
-                <StrengthTrendCard />
+                <StrengthTrendCard range={range} />
               </div>
               <div className={insightTab === 'focus' ? 'block' : 'hidden md:block'}>
                 <p className="text-xs tracking-[0.2em] uppercase text-muted mb-3 font-display">Muscle Focus</p>
-                <MuscleFocusCard />
+                <MuscleFocusCard range={range} />
               </div>
             </div>
           </section>
@@ -311,12 +363,13 @@ function HomeScreen({
 
 // ─── This Week insight cards ────────────────────────────────────────────────
 
-function MuscleFocusCard() {
+function MuscleFocusCard({ range }: { range: DateRange }) {
   const [entries, setEntries] = useState<MuscleFocusEntry[] | 'loading'>('loading')
 
   useEffect(() => {
-    api.getMuscleFocus().then(setEntries).catch(() => setEntries([]))
-  }, [])
+    setEntries('loading')
+    api.getMuscleFocus(range).then(setEntries).catch(() => setEntries([]))
+  }, [range.start, range.end])
 
   if (entries === 'loading') {
     return (
@@ -341,7 +394,7 @@ function MuscleFocusCard() {
     <div className="bg-surface border border-border rounded-sm p-5">
       <div className="flex justify-between items-baseline mb-4">
         <span className="text-sm font-display font-600 text-ink">% of sets logged</span>
-        <span className="text-xs text-muted">Last 30 days</span>
+        <span className="text-xs text-muted">{range.start ? `Since ${range.start}` : 'All time'}</span>
       </div>
       <div>
         {entries.map(e => (
@@ -372,16 +425,22 @@ function MuscleFocusCard() {
   )
 }
 
+const BUCKET_UNIT_LABEL: Record<StrengthTrend['bucketUnit'], string> = {
+  day: 'daily',
+  week: 'weekly',
+  month: 'monthly',
+}
+
 function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const W = 320
   const H = 120
   const PAD = 10
-  const n = trend.weeks.length
+  const n = trend.points.length
 
-  const points = trend.weeks
-    .map((w, i) => ({ i, weekStart: w.weekStart, weight: w.maxWeight }))
-    .filter((p): p is { i: number; weekStart: string; weight: number } => p.weight !== null)
+  const points = trend.points
+    .map((w, i) => ({ i, bucketStart: w.bucketStart, weight: w.maxWeight }))
+    .filter((p): p is { i: number; bucketStart: string; weight: number } => p.weight !== null)
 
   if (points.length === 0) {
     return <p className="text-xs text-muted">No logged sets for this muscle group yet.</p>
@@ -406,7 +465,9 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
         <span className="text-sm font-display font-600 text-ink">{trend.exerciseName}</span>
         {deltaLabel && <span className="text-xs font-display font-600 text-lime tabular-nums">{deltaLabel}</span>}
       </div>
-      <p className="text-xs text-muted mb-3.5">Top set weight · last {n} weeks</p>
+      <p className="text-xs text-muted mb-3.5">
+        Top set weight · {BUCKET_UNIT_LABEL[trend.bucketUnit]}
+      </p>
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full block overflow-visible" style={{ height: 120 }}>
           <line x1="0" y1={H * 0.15} x2={W} y2={H * 0.15} className="stroke-border" strokeWidth="1" />
@@ -462,7 +523,10 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
           >
             <p className="text-xs font-display font-600 text-lime tabular-nums">{fmtWeight(hovered.weight)} lbs</p>
             <p className="text-[10px] text-muted font-display">
-              {new Date(hovered.weekStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {new Date(hovered.bucketStart + 'T00:00:00').toLocaleDateString(
+                'en-US',
+                trend.bucketUnit === 'month' ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' }
+              )}
             </p>
           </div>
         )}
@@ -471,7 +535,7 @@ function StrengthTrendChart({ trend }: { trend: StrengthTrend }) {
   )
 }
 
-function StrengthTrendCard() {
+function StrengthTrendCard({ range }: { range: DateRange }) {
   const [groups, setGroups] = useState<string[] | 'loading'>('loading')
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [trend, setTrend] = useState<StrengthTrend | null | 'loading'>('loading')
@@ -490,10 +554,10 @@ function StrengthTrendCard() {
     if (!selectedGroup) return
     setTrend('loading')
     api
-      .getStrengthTrend(selectedGroup)
+      .getStrengthTrend(selectedGroup, range)
       .then(setTrend)
       .catch(() => setTrend(null))
-  }, [selectedGroup])
+  }, [selectedGroup, range.start, range.end])
 
   if (groups === 'loading') {
     return (
